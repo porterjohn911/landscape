@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Landscape Studio — Web Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body, #app { height: 100%; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+    canvas { display: block; }
+    .cursor-ew-resize { cursor: ew-resize; }
+    .cursor-crosshair { cursor: crosshair; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100">
+  <div id="app"></div>
+
+  <script type="module">
+    import { html, render, useState, useEffect, useRef, useMemo, useCallback }
+      from 'https://esm.sh/htm@3.1.1/preact/standalone'
+    import * as THREE from 'https://esm.sh/three@0.169.0'
+    import { OrbitControls } from 'https://esm.sh/three@0.169.0/examples/jsm/controls/OrbitControls.js'
+
+    /* ---------- catalog ---------- */
+    const PLANTS = [
+      { id: 'oak',      name: 'Coast Live Oak',   radius: 6,   height: 12,  color: '#3e6b2a', category: 'tree' },
+      { id: 'maple',    name: 'Japanese Maple',   radius: 2.5, height: 4,   color: '#a14b2a', category: 'tree' },
+      { id: 'olive',    name: 'Olive Tree',       radius: 3.5, height: 6,   color: '#7a8a52', category: 'tree' },
+      { id: 'myrtle',   name: 'Crepe Myrtle',     radius: 2,   height: 5,   color: '#a05a7a', category: 'tree' },
+      { id: 'box',      name: 'Boxwood',          radius: 0.6, height: 1,   color: '#4a7044', category: 'shrub' },
+      { id: 'rosemary', name: 'Rosemary',         radius: 0.7, height: 0.8, color: '#5a7a5a', category: 'shrub' },
+      { id: 'lavender', name: 'Lavender',         radius: 0.5, height: 0.6, color: '#7a6aa0', category: 'perennial' },
+      { id: 'agave',    name: 'Century Plant',    radius: 1.2, height: 1.5, color: '#6a8a6a', category: 'shrub' },
+      { id: 'fescue',   name: 'Blue Fescue',      radius: 0.3, height: 0.3, color: '#6a8aa0', category: 'grass' },
+      { id: 'sedum',    name: 'Stonecrop',        radius: 0.4, height: 0.5, color: '#7a8a4a', category: 'groundcover' },
+    ]
+    const plantById = (id) => PLANTS.find(p => p.id === id)
+
+    const MATERIALS = [
+      { id: 'flagstone', name: 'Flagstone', color: '#a09b8a' },
+      { id: 'concrete',  name: 'Concrete',  color: '#c8c8c0' },
+      { id: 'pavers',    name: 'Pavers',    color: '#8a7a6a' },
+      { id: 'gravel',    name: 'Gravel',    color: '#b0a890' },
+      { id: 'turf',      name: 'Turf',      color: '#5a8a4a' },
+      { id: 'mulch',     name: 'Mulch',     color: '#5a3e22' },
+      { id: 'deck',      name: 'Wood deck', color: '#7a5a3a' },
+    ]
+
+    const STYLE_PRESETS = [
+      { label: 'Modern xeriscape',
+        prompt: 'desert-adapted, gravel, agave, golden hour',
+        filter: 'saturate(0.85) hue-rotate(-15deg) brightness(1.1) contrast(1.05)' },
+      { label: 'Tropical resort',
+        prompt: 'palms, monstera, lush ferns, soft evening light',
+        filter: 'saturate(1.4) hue-rotate(20deg) brightness(1.08) contrast(1.05)' },
+      { label: 'English cottage',
+        prompt: 'lavender, roses, foxglove, stone path',
+        filter: 'saturate(1.15) hue-rotate(8deg) brightness(1.05)' },
+      { label: 'Japanese zen',
+        prompt: 'raked gravel, moss, stone lanterns, japanese maple',
+        filter: 'saturate(0.75) sepia(0.15) brightness(1.02) contrast(1.1)' },
+      { label: 'Mediterranean',
+        prompt: 'olive trees, terracotta, rosemary, stucco walls',
+        filter: 'saturate(1.2) hue-rotate(-8deg) brightness(1.06) contrast(1.05)' },
+      { label: 'Desert modern',
+        prompt: 'saguaro, ocotillo, rusted steel planters, dramatic shadows',
+        filter: 'saturate(0.95) hue-rotate(-25deg) brightness(1.12) contrast(1.15)' },
+    ]
+
+    const nid = () => Math.random().toString(36).slice(2, 10)
+
+    /* ---------- root app ---------- */
+    function App() {
+      const [tab, setTab] = useState('plan')
+      const [design, setDesign] = useState([])
+      const [property, setProperty] = useState([])
+      const [scale, setScale] = useState(1) // calibration multiplier
+      const [photoSource, setPhotoSource] = useState(null)
+      const [photoSessions, setPhotoSessions] = useState([])
+
+      const ctx = { design, setDesign, property, setProperty, scale, setScale,
+                    photoSource, setPhotoSource, photoSessions, setPhotoSessions }
+
+      return html`
+        <div class="flex flex-col h-screen">
+          <header class="flex items-center justify-between px-4 h-12 border-b border-slate-800 bg-slate-900/60">
+            <div class="flex items-center gap-2 font-semibold">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22V12M5 12s2-7 7-7 7 7 7 7M5 12c0 4 3 7 7 7s7-3 7-7M5 12c0 2 1 4 3 5M19 12c0 2-1 4-3 5"
+                  stroke-linecap="round" stroke-linejoin="round" class="text-green-500"/>
+              </svg>
+              Landscape Studio
+              <span class="text-xs text-slate-500 ml-2 font-normal">Web preview</span>
+            </div>
+            <nav class="flex items-center gap-1">
+              ${[
+                ['photo', 'AI photo'],
+                ['plan',  '2D plan'],
+                ['scene', '3D scene'],
+              ].map(([id, label]) => html`
+                <button onClick=${() => setTab(id)}
+                  class="px-3 py-1.5 rounded text-sm transition ${tab === id ? 'bg-green-700 text-white' : 'text-slate-300 hover:bg-slate-800'}">
+                  ${label}
+                </button>
+              `)}
+            </nav>
+            <a href="https://github.com/porterjohn911/landscape" target="_blank"
+               class="text-xs text-slate-400 hover:text-slate-100">source on GitHub →</a>
+          </header>
+          <main class="flex-1 overflow-hidden">
+            ${tab === 'plan'  ? html`<${PlanView} ...${ctx} />` : ''}
+            ${tab === 'scene' ? html`<${SceneView} ...${ctx} />` : ''}
+            ${tab === 'photo' ? html`<${PhotoView} ...${ctx} />` : ''}
+          </main>
+        </div>
+      `
+    }
+
+    /* =========================================================================
+       2D PLAN
+       ========================================================================= */
+    function PlanView({ design, setDesign, property, setProperty, scale, setScale }) {
+      const [tool, setTool] = useState('plant')
+      const [activePlant, setActivePlant] = useState(PLANTS[0])
+      const [activeMaterial, setActiveMaterial] = useState(MATERIALS[0])
+      const [draftPoly, setDraftPoly] = useState([])
+      const [calibPts, setCalibPts] = useState([])
+      const [calibInput, setCalibInput] = useState('')
+      const wrapRef = useRef(null)
+      const canvasRef = useRef(null)
+      const [size, setSize] = useState({ w: 1000, h: 700 })
+
+      const pxPerMeter = 25 * scale
+      const cx = size.w / 2
+      const cy = size.h / 2
+      const m2px = (p) => ({ x: cx + p.x * pxPerMeter, y: cy + p.y * pxPerMeter })
+      const px2m = (p) => ({ x: (p.x - cx) / pxPerMeter, y: (p.y - cy) / pxPerMeter })
+
+      useEffect(() => {
+        function resize() {
+          const r = wrapRef.current?.getBoundingClientRect()
+          if (r) setSize({ w: r.width, h: r.height })
+        }
+        resize()
+        window.addEventListener('resize', resize)
+        return () => window.removeEventListener('resize', resize)
+      }, [])
+
+      useEffect(() => { setDraftPoly([]); setCalibPts([]); setCalibInput('') }, [tool])
+
+      // re-render the canvas every time anything visible changes
+      useEffect(() => {
+        const c = canvasRef.current
+        if (!c) return
+        c.width = size.w
+        c.height = size.h
+        const g = c.getContext('2d')
+        // background: faux satellite (mottled greens)
+        const grad = g.createLinearGradient(0, 0, size.w, size.h)
+        grad.addColorStop(0, '#2e4628'); grad.addColorStop(1, '#4a6238')
+        g.fillStyle = grad; g.fillRect(0, 0, size.w, size.h)
+        // soft noise blobs
+        for (let i = 0; i < 80; i++) {
+          g.fillStyle = `rgba(${30 + Math.random()*40}, ${70 + Math.random()*40}, ${30 + Math.random()*30}, 0.4)`
+          const x = Math.random() * size.w, y = Math.random() * size.h
+          const r = 20 + Math.random() * 60
+          g.beginPath(); g.arc(x, y, r, 0, Math.PI*2); g.fill()
+        }
+        // grid
+        g.strokeStyle = 'rgba(255,255,255,0.05)'; g.lineWidth = 1
+        for (let x = (cx % pxPerMeter); x < size.w; x += pxPerMeter) { g.beginPath(); g.moveTo(x,0); g.lineTo(x,size.h); g.stroke() }
+        for (let y = (cy % pxPerMeter); y < size.h; y += pxPerMeter) { g.beginPath(); g.moveTo(0,y); g.lineTo(size.w,y); g.stroke() }
+        // property polygon
+        if (property.length >= 3) {
+          g.beginPath()
+          property.forEach((p, i) => {
+            const q = m2px(p); if (i === 0) g.moveTo(q.x, q.y); else g.lineTo(q.x, q.y)
+          })
+          g.closePath()
+          g.fillStyle = 'rgba(250, 204, 21, 0.08)'; g.fill()
+          g.strokeStyle = '#facc15'; g.lineWidth = 2; g.setLineDash([8, 6]); g.stroke(); g.setLineDash([])
+          if (tool === 'property') {
+            property.forEach(p => {
+              const q = m2px(p)
+              g.beginPath(); g.arc(q.x, q.y, 6, 0, Math.PI*2)
+              g.fillStyle = '#facc15'; g.fill()
+              g.strokeStyle = '#000'; g.lineWidth = 1; g.stroke()
+            })
+          }
+        }
+        // design
+        for (const o of design) {
+          if (o.kind === 'hardscape') {
+            g.beginPath()
+            o.polygon.forEach((p, i) => { const q = m2px(p); if (i===0) g.moveTo(q.x,q.y); else g.lineTo(q.x,q.y) })
+            g.closePath()
+            g.fillStyle = o.color + 'a0'; g.fill()
+            g.strokeStyle = '#000'; g.lineWidth = 1; g.stroke()
+          } else if (o.kind === 'water') {
+            g.beginPath()
+            o.polygon.forEach((p, i) => { const q = m2px(p); if (i===0) g.moveTo(q.x,q.y); else g.lineTo(q.x,q.y) })
+            g.closePath()
+            g.fillStyle = 'rgba(58, 122, 160, 0.85)'; g.fill()
+            g.strokeStyle = '#1a3a60'; g.lineWidth = 1; g.stroke()
+          } else if (o.kind === 'plant') {
+            const q = m2px({ x: o.x, y: o.y })
+            const spec = plantById(o.plantId)
+            g.beginPath(); g.arc(q.x, q.y, o.radius * pxPerMeter, 0, Math.PI*2)
+            g.fillStyle = (spec?.color ?? '#5a8a4a') + '88'; g.fill()
+            g.strokeStyle = spec?.color ?? '#5a8a4a'; g.lineWidth = 1; g.stroke()
+            g.beginPath(); g.arc(q.x, q.y, 3, 0, Math.PI*2)
+            g.fillStyle = '#fff'; g.fill()
+          }
+        }
+        // in-progress polygon
+        if (draftPoly.length >= 2) {
+          g.beginPath()
+          for (let i = 0; i < draftPoly.length; i += 2) {
+            if (i === 0) g.moveTo(draftPoly[i], draftPoly[i+1])
+            else         g.lineTo(draftPoly[i], draftPoly[i+1])
+          }
+          g.strokeStyle = tool === 'property' ? '#facc15' : '#5a8a4a'
+          g.lineWidth = 2; g.setLineDash([4,4]); g.stroke(); g.setLineDash([])
+        }
+        // calibration line
+        if (calibPts.length >= 2) {
+          g.beginPath(); g.moveTo(calibPts[0], calibPts[1])
+          if (calibPts.length >= 4) g.lineTo(calibPts[2], calibPts[3])
+          g.strokeStyle = '#38bdf8'; g.lineWidth = 2; g.setLineDash([6,4]); g.stroke(); g.setLineDash([])
+          for (let i = 0; i < calibPts.length; i += 2) {
+            g.beginPath(); g.arc(calibPts[i], calibPts[i+1], 4, 0, Math.PI*2); g.fillStyle = '#38bdf8'; g.fill()
+          }
+          if (calibPts.length >= 4) {
+            const d = Math.hypot(calibPts[2]-calibPts[0], calibPts[3]-calibPts[1]) / pxPerMeter
+            g.fillStyle = '#38bdf8'; g.font = '12px sans-serif'
+            g.fillText(`${d.toFixed(2)} m`,
+              (calibPts[0]+calibPts[2])/2 + 8, (calibPts[1]+calibPts[3])/2 - 6)
+          }
+        }
+        // scale bar
+        g.fillStyle = '#fff'; g.fillRect(20, size.h - 28, 5 * pxPerMeter, 4)
+        g.font = '11px sans-serif'; g.fillText('5 m', 20, size.h - 36)
+      }, [design, property, draftPoly, calibPts, size, tool, scale])
+
+      function onCanvasClick(e) {
+        const r = canvasRef.current.getBoundingClientRect()
+        const pos = { x: e.clientX - r.left, y: e.clientY - r.top }
+        const m = px2m(pos)
+        if (tool === 'plant') {
+          setDesign(d => [...d, { id: nid(), kind: 'plant', plantId: activePlant.id,
+            x: m.x, y: m.y, radius: activePlant.radius, height: activePlant.height }])
+        } else if (tool === 'hardscape' || tool === 'water' || tool === 'property') {
+          setDraftPoly(p => [...p, pos.x, pos.y])
+        } else if (tool === 'calibrate') {
+          setCalibPts(p => p.length >= 4 ? [pos.x, pos.y] : [...p, pos.x, pos.y])
+        }
+      }
+
+      function finishPolygon() {
+        if (draftPoly.length < 6) return setDraftPoly([])
+        const pts = []
+        for (let i = 0; i < draftPoly.length; i += 2)
+          pts.push(px2m({ x: draftPoly[i], y: draftPoly[i+1] }))
+        if (tool === 'property') {
+          setProperty(pts)
+        } else if (tool === 'hardscape') {
+          setDesign(d => [...d, { id: nid(), kind: 'hardscape', material: activeMaterial.id,
+            color: activeMaterial.color, polygon: pts }])
+        } else {
+          setDesign(d => [...d, { id: nid(), kind: 'water', polygon: pts }])
+        }
+        setDraftPoly([])
+      }
+
+      function applyCalibration() {
+        const real = parseFloat(calibInput)
+        if (!real || calibPts.length < 4) return
+        const px = Math.hypot(calibPts[2]-calibPts[0], calibPts[3]-calibPts[1])
+        const target = px / real // desired pxPerMeter
+        setScale(target / 25)
+        setCalibPts([]); setCalibInput(''); setTool('plant')
+      }
+
+      const propertyArea = polyArea(property)
+      const propertyPerim = polyPerim(property)
+
+      return html`
+        <div class="grid grid-cols-[260px_1fr_280px] h-full">
+          <aside class="border-r border-slate-800 bg-slate-900/60 p-3 overflow-y-auto">
+            <div class="grid grid-cols-3 gap-1 mb-3">
+              ${[['select','Select'],['property','Lot'],['calibrate','Scale'],['plant','Plant'],['hardscape','Hard'],['water','Water']]
+                .map(([id, label]) => html`
+                  <button onClick=${() => setTool(id)}
+                    class="px-2 py-1.5 rounded text-xs ${tool === id ? 'bg-green-700' : 'bg-slate-800 hover:bg-slate-700'}">
+                    ${label}
+                  </button>
+                `)}
+            </div>
+
+            ${tool === 'property' && html`
+              <div class="p-2 mb-3 rounded bg-slate-950/60 border border-slate-800">
+                <p class="text-xs text-slate-400 mb-2">Click each corner of the property. Finish to commit a closed polygon.</p>
+                ${property.length > 0 && html`<button onClick=${() => setProperty([])}
+                  class="w-full text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded mb-1">Clear existing trace</button>`}
+                ${draftPoly.length >= 6 && html`<button onClick=${finishPolygon}
+                  class="w-full text-sm px-3 py-2 bg-green-700 hover:bg-green-600 rounded mt-1">
+                  Finish property (${draftPoly.length / 2} vertices)</button>`}
+                ${draftPoly.length > 0 && html`<button onClick=${() => setDraftPoly([])}
+                  class="w-full text-xs text-slate-400 hover:text-slate-100 mt-1">Cancel</button>`}
+              </div>
+            `}
+
+            ${tool === 'calibrate' && html`
+              <div class="p-2 mb-3 rounded bg-slate-950/60 border border-slate-800">
+                <p class="text-xs text-slate-400 mb-2">Click two ends of something with a known length, then enter its real-world meters.</p>
+                <div class="text-xs text-slate-500 mb-2">Current scale: 1 m = ${pxPerMeter.toFixed(1)} px${scale !== 1 ? html` <span class="text-amber-400">(×${scale.toFixed(3)})</span>` : ''}</div>
+                ${calibPts.length >= 4 && html`
+                  <label class="text-xs text-slate-400">Actual length (m):</label>
+                  <input type="number" step="0.01" min="0.01" autofocus
+                    value=${calibInput} onInput=${(e) => setCalibInput(e.target.value)}
+                    onKeyDown=${(e) => { if (e.key === 'Enter') applyCalibration() }}
+                    class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm mt-1" />
+                  <button onClick=${applyCalibration} disabled=${!calibInput}
+                    class="w-full mt-2 px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:bg-slate-800 disabled:text-slate-500 rounded text-sm">
+                    Apply calibration</button>
+                `}
+                ${scale !== 1 && html`<button onClick=${() => setScale(1)}
+                  class="w-full mt-2 px-3 py-1 text-xs text-slate-400 hover:text-slate-100">Reset scale</button>`}
+              </div>
+            `}
+
+            ${tool === 'plant' && html`
+              <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Plants</h3>
+              <div class="space-y-1">
+                ${PLANTS.map(p => html`
+                  <button onClick=${() => setActivePlant(p)}
+                    class="w-full text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${activePlant.id === p.id ? 'bg-green-700' : 'bg-slate-800 hover:bg-slate-700'}">
+                    <span class="w-3 h-3 rounded-full" style="background: ${p.color}"></span>
+                    <span class="flex-1 truncate">${p.name}</span>
+                    <span class="text-xs text-slate-400">${p.radius}m</span>
+                  </button>
+                `)}
+              </div>
+            `}
+
+            ${tool === 'hardscape' && html`
+              <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Materials</h3>
+              <div class="space-y-1">
+                ${MATERIALS.map(m => html`
+                  <button onClick=${() => setActiveMaterial(m)}
+                    class="w-full text-left text-sm px-2 py-1.5 rounded flex items-center gap-2 ${activeMaterial.id === m.id ? 'bg-green-700' : 'bg-slate-800 hover:bg-slate-700'}">
+                    <span class="w-3 h-3 rounded" style="background: ${m.color}"></span>
+                    ${m.name}
+                  </button>
+                `)}
+              </div>
+              <p class="text-xs text-slate-400 mt-3">Click on the canvas to add vertices, then Finish.</p>
+            `}
+
+            ${(tool === 'hardscape' || tool === 'water') && draftPoly.length >= 6 && html`
+              <button onClick=${finishPolygon} class="w-full mt-3 px-3 py-2 bg-green-700 hover:bg-green-600 rounded text-sm">
+                Finish polygon (${draftPoly.length / 2} vertices)
+              </button>
+            `}
+            ${(tool === 'hardscape' || tool === 'water') && draftPoly.length > 0 && html`
+              <button onClick=${() => setDraftPoly([])} class="w-full mt-1 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-100">Cancel</button>
+            `}
+          </aside>
+
+          <div ref=${wrapRef} class="bg-slate-950 relative">
+            <canvas ref=${canvasRef} onClick=${onCanvasClick} class="cursor-crosshair" />
+          </div>
+
+          <aside class="border-l border-slate-800 bg-slate-900/60 p-3 overflow-y-auto">
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Property</h3>
+            ${property.length >= 3 ? html`
+              <div class="text-sm space-y-1 mb-4">
+                <div class="flex justify-between"><span class="text-slate-400">Area</span>
+                  <span class="font-mono">${propertyArea.toFixed(0)} m² (${(propertyArea*10.764).toFixed(0)} ft²)</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">Perimeter</span>
+                  <span class="font-mono">${propertyPerim.toFixed(1)} m</span></div>
+                <div class="flex justify-between"><span class="text-slate-400">Vertices</span>
+                  <span class="font-mono">${property.length}</span></div>
+              </div>
+            ` : html`<p class="text-xs text-slate-500 mb-4">Use the <span class="text-yellow-400">Lot</span> tool to trace the property line.</p>`}
+
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Plant schedule</h3>
+            <${PlantSchedule} design=${design} />
+
+            ${design.length > 0 && html`
+              <button onClick=${() => { if (confirm('Clear the design?')) setDesign([]) }}
+                class="w-full mt-6 px-3 py-1.5 text-sm bg-slate-800 hover:bg-red-900/60 rounded">
+                Clear design
+              </button>
+            `}
+          </aside>
+        </div>
+      `
+    }
+
+    function PlantSchedule({ design }) {
+      const counts = new Map()
+      for (const o of design) if (o.kind === 'plant') counts.set(o.plantId, (counts.get(o.plantId)||0) + 1)
+      if (counts.size === 0) return html`<p class="text-xs text-slate-500">No plants placed yet.</p>`
+      return html`<ul class="text-sm space-y-1">
+        ${[...counts.entries()].map(([id, n]) => {
+          const p = plantById(id)
+          return html`<li class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full" style="background: ${p?.color}"></span>
+            <span class="flex-1 truncate">${p?.name}</span>
+            <span class="text-slate-400 text-xs">×${n}</span>
+          </li>`
+        })}
+      </ul>`
+    }
+
+    /* =========================================================================
+       3D SCENE
+       ========================================================================= */
+    function SceneView({ design, property }) {
+      const wrapRef = useRef(null)
+      const stateRef = useRef(null) // { scene, camera, renderer, controls, objectsRoot, sunLight }
+      const [time, setTime] = useState(13)
+      const [azimuth, setAzimuth] = useState(160)
+
+      // init three.js once
+      useEffect(() => {
+        const wrap = wrapRef.current
+        if (!wrap) return
+        const renderer = new THREE.WebGLRenderer({ antialias: true })
+        renderer.setPixelRatio(window.devicePixelRatio)
+        renderer.shadowMap.enabled = true
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap
+        renderer.setSize(wrap.clientWidth, wrap.clientHeight)
+        wrap.appendChild(renderer.domElement)
+
+        const scene = new THREE.Scene()
+        scene.background = new THREE.Color('#9ec5e8')
+        scene.fog = new THREE.Fog('#9ec5e8', 60, 180)
+
+        const camera = new THREE.PerspectiveCamera(50, wrap.clientWidth / wrap.clientHeight, 0.1, 500)
+        camera.position.set(25, 18, 25)
+
+        const controls = new OrbitControls(camera, renderer.domElement)
+        controls.enableDamping = true
+        controls.target.set(0, 1, 0)
+        controls.maxPolarAngle = Math.PI / 2.1
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+        const sun = new THREE.DirectionalLight(0xffffff, 1.1)
+        sun.castShadow = true
+        sun.shadow.mapSize.set(2048, 2048)
+        sun.shadow.camera.left = -50; sun.shadow.camera.right = 50
+        sun.shadow.camera.top  =  50; sun.shadow.camera.bottom = -50
+        scene.add(sun)
+        scene.add(sun.target)
+
+        const ground = new THREE.Mesh(
+          new THREE.PlaneGeometry(200, 200),
+          new THREE.MeshStandardMaterial({ color: '#3e5a32', roughness: 0.95 })
+        )
+        ground.rotation.x = -Math.PI / 2
+        ground.receiveShadow = true
+        scene.add(ground)
+
+        // subtle grid
+        const grid = new THREE.GridHelper(80, 80, '#3a5a3a', '#2a3a2a')
+        grid.position.y = 0.01
+        scene.add(grid)
+
+        const objectsRoot = new THREE.Group()
+        scene.add(objectsRoot)
+
+        const propertyRoot = new THREE.Group()
+        scene.add(propertyRoot)
+
+        let raf
+        function loop() {
+          controls.update()
+          renderer.render(scene, camera)
+          raf = requestAnimationFrame(loop)
+        }
+        loop()
+
+        function onResize() {
+          if (!wrap) return
+          renderer.setSize(wrap.clientWidth, wrap.clientHeight)
+          camera.aspect = wrap.clientWidth / wrap.clientHeight
+          camera.updateProjectionMatrix()
+        }
+        const ro = new ResizeObserver(onResize); ro.observe(wrap)
+
+        stateRef.current = { scene, camera, renderer, controls, objectsRoot, propertyRoot, sun }
+
+        return () => {
+          cancelAnimationFrame(raf)
+          ro.disconnect()
+          renderer.dispose()
+          wrap.removeChild(renderer.domElement)
+        }
+      }, [])
+
+      // sun position
+      useEffect(() => {
+        const s = stateRef.current
+        if (!s) return
+        const t = (time - 6) / 12
+        const elev = Math.sin(t * Math.PI)
+        const az = (azimuth * Math.PI) / 180
+        const dist = 80
+        const y = Math.max(2, elev * 70)
+        s.sun.position.set(Math.sin(az) * dist, y, Math.cos(az) * dist)
+        const sky = elev > 0.3 ? '#9ec5e8' : elev > 0 ? '#dba879' : '#1a2840'
+        s.scene.background = new THREE.Color(sky)
+        s.scene.fog.color = new THREE.Color(sky)
+      }, [time, azimuth])
+
+      // rebuild design objects when design changes
+      useEffect(() => {
+        const s = stateRef.current
+        if (!s) return
+        // clear
+        while (s.objectsRoot.children.length) s.objectsRoot.remove(s.objectsRoot.children[0])
+        for (const o of design) {
+          if (o.kind === 'plant') s.objectsRoot.add(buildPlantMesh(o))
+          else if (o.kind === 'hardscape' || o.kind === 'water') s.objectsRoot.add(buildPadMesh(o))
+        }
+      }, [design])
+
+      // property outline in 3D
+      useEffect(() => {
+        const s = stateRef.current
+        if (!s) return
+        while (s.propertyRoot.children.length) s.propertyRoot.remove(s.propertyRoot.children[0])
+        if (property.length >= 3) {
+          const pts = property.map(p => new THREE.Vector3(p.x, 0.04, p.y))
+          pts.push(pts[0].clone())
+          const geo = new THREE.BufferGeometry().setFromPoints(pts)
+          const mat = new THREE.LineBasicMaterial({ color: 0xfacc15 })
+          s.propertyRoot.add(new THREE.Line(geo, mat))
+        }
+      }, [property])
+
+      function recenter() {
+        const s = stateRef.current
+        if (!s) return
+        if (property.length >= 3) {
+          let sx = 0, sy = 0
+          for (const p of property) { sx += p.x; sy += p.y }
+          s.controls.target.set(sx / property.length, 1, sy / property.length)
+        } else {
+          s.controls.target.set(0, 1, 0)
+        }
+      }
+
+      return html`
+        <div class="grid grid-cols-[1fr_260px] h-full">
+          <div ref=${wrapRef} class="relative bg-slate-950">
+            ${design.length === 0 && html`
+              <div class="absolute inset-0 flex items-center justify-center text-slate-500 text-sm pointer-events-none">
+                Drop objects on the 2D plan to see them here.
+              </div>`}
+          </div>
+          <aside class="border-l border-slate-800 bg-slate-900/60 p-3 overflow-y-auto">
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Sun</h3>
+            <label class="text-xs text-slate-400">Time of day: ${time}:00</label>
+            <input type="range" min="6" max="20" value=${time} onInput=${(e) => setTime(+e.target.value)} class="w-full mb-3" />
+            <label class="text-xs text-slate-400">Azimuth: ${azimuth}°</label>
+            <input type="range" min="0" max="360" value=${azimuth} onInput=${(e) => setAzimuth(+e.target.value)} class="w-full mb-4" />
+
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Camera</h3>
+            <button onClick=${recenter} class="w-full text-sm px-3 py-1.5 mb-2 bg-slate-800 hover:bg-slate-700 rounded">
+              Recenter on property
+            </button>
+            <p class="text-xs text-slate-500">Drag = orbit · Scroll = zoom · Right-drag = pan</p>
+
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mt-6 mb-2">Status</h3>
+            <ul class="text-xs text-slate-400 space-y-0.5">
+              <li>${design.filter(o => o.kind === 'plant').length} plants</li>
+              <li>${design.filter(o => o.kind === 'hardscape').length} hardscape areas</li>
+              <li>${design.filter(o => o.kind === 'water').length} water features</li>
+              <li>${property.length >= 3 ? 'Property line set' : 'No property line'}</li>
+            </ul>
+          </aside>
+        </div>
+      `
+    }
+
+    function buildPlantMesh(plant) {
+      const spec = plantById(plant.plantId)
+      const cat = spec?.category ?? 'shrub'
+      const color = spec?.color ?? '#5a8a4a'
+      const g = new THREE.Group()
+      g.position.set(plant.x, 0, plant.y)
+
+      if (cat === 'tree') {
+        const trunkH = plant.height * 0.45
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(plant.radius * 0.08, plant.radius * 0.1, trunkH, 10),
+          new THREE.MeshStandardMaterial({ color: '#5a3e22', roughness: 0.95 })
+        )
+        trunk.position.y = trunkH / 2; trunk.castShadow = true
+        g.add(trunk)
+        const canopyY = trunkH + plant.radius * 0.8
+        const positions = [
+          [0, canopyY, 0, 1.0],
+          [plant.radius * 0.35, canopyY + plant.radius * 0.2, plant.radius * 0.1, 0.72],
+          [-plant.radius * 0.4, canopyY,                       plant.radius * 0.25, 0.65],
+          [plant.radius * 0.1,  canopyY - plant.radius * 0.2, -plant.radius * 0.35, 0.55],
+        ]
+        for (const [x, y, z, s] of positions) {
+          const m = new THREE.Mesh(
+            new THREE.SphereGeometry(plant.radius * s, 14, 10),
+            new THREE.MeshStandardMaterial({ color, roughness: 0.9 })
+          )
+          m.position.set(x, y, z); m.castShadow = true
+          g.add(m)
+        }
+      } else if (cat === 'shrub') {
+        const positions = [
+          [0, plant.radius * 0.6, 0, 1.0],
+          [plant.radius*0.5,  plant.radius*0.5, plant.radius*0.1,  0.75],
+          [-plant.radius*0.45,plant.radius*0.45,plant.radius*0.2,  0.7],
+          [plant.radius*0.1,  plant.radius*0.4,-plant.radius*0.5,  0.65],
+        ]
+        for (const [x, y, z, s] of positions) {
+          const m = new THREE.Mesh(
+            new THREE.SphereGeometry(plant.radius * s, 12, 10),
+            new THREE.MeshStandardMaterial({ color, roughness: 0.95 })
+          )
+          m.position.set(x, y, z); m.castShadow = true
+          g.add(m)
+        }
+      } else if (cat === 'grass') {
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2
+          const dr = plant.radius * (0.2 + Math.random() * 0.6)
+          const blade = new THREE.Mesh(
+            new THREE.ConeGeometry(plant.radius * 0.07, plant.height, 5),
+            new THREE.MeshStandardMaterial({ color, roughness: 0.9 })
+          )
+          blade.position.set(Math.cos(a) * dr, plant.height / 2, Math.sin(a) * dr)
+          blade.rotation.z = (Math.random() - 0.5) * 0.4
+          blade.castShadow = true
+          g.add(blade)
+        }
+      } else if (cat === 'perennial') {
+        const base = new THREE.Mesh(
+          new THREE.SphereGeometry(plant.radius, 12, 10),
+          new THREE.MeshStandardMaterial({ color, roughness: 0.95 })
+        )
+        base.position.y = plant.height * 0.4; base.castShadow = true; g.add(base)
+        const flower = new THREE.Mesh(
+          new THREE.SphereGeometry(plant.radius * 0.6, 10, 8),
+          new THREE.MeshStandardMaterial({ color: tintColor(color, 0.3), roughness: 0.7 })
+        )
+        flower.position.y = plant.height * 0.9; flower.castShadow = true; g.add(flower)
+      } else {
+        const disk = new THREE.Mesh(
+          new THREE.CircleGeometry(plant.radius, 20),
+          new THREE.MeshStandardMaterial({ color, roughness: 0.95 })
+        )
+        disk.rotation.x = -Math.PI / 2; disk.position.y = 0.05; disk.receiveShadow = true
+        g.add(disk)
+      }
+      return g
+    }
+
+    function buildPadMesh(o) {
+      const [cx, cz] = centroid(o.polygon)
+      const { w, d } = bbox(o.polygon)
+      const isWater = o.kind === 'water'
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(Math.max(w, 0.5), isWater ? 0.08 : 0.04, Math.max(d, 0.5)),
+        new THREE.MeshStandardMaterial({
+          color: isWater ? '#3a7aa0' : (o.color ?? '#888'),
+          roughness: isWater ? 0.15 : 0.9,
+          metalness: isWater ? 0.2 : 0,
+        })
+      )
+      m.position.set(cx, isWater ? 0.04 : 0.02, cz)
+      m.receiveShadow = true
+      return m
+    }
+
+    function tintColor(hex, amt) {
+      const c = new THREE.Color(hex)
+      c.r = Math.min(1, c.r + amt); c.g = Math.min(1, c.g + amt); c.b = Math.min(1, c.b + amt)
+      return '#' + c.getHexString()
+    }
+    function centroid(poly) {
+      let sx = 0, sy = 0; for (const p of poly) { sx += p.x; sy += p.y }
+      return [sx / poly.length, sy / poly.length]
+    }
+    function bbox(poly) {
+      let mnX = Infinity, mxX = -Infinity, mnY = Infinity, mxY = -Infinity
+      for (const p of poly) { if (p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y }
+      return { w: mxX-mnX, d: mxY-mnY }
+    }
+    function polyArea(poly) {
+      if (poly.length < 3) return 0
+      let a = 0
+      for (let i = 0; i < poly.length; i++) {
+        const j = (i+1) % poly.length
+        a += poly[i].x * poly[j].y - poly[j].x * poly[i].y
+      }
+      return Math.abs(a / 2)
+    }
+    function polyPerim(poly) {
+      if (poly.length < 2) return 0
+      let p = 0
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i+1) % poly.length]
+        p += Math.hypot(b.x - a.x, b.y - a.y)
+      }
+      return p
+    }
+
+    /* =========================================================================
+       AI PHOTO
+       ========================================================================= */
+    function PhotoView({ photoSource, setPhotoSource, photoSessions, setPhotoSessions }) {
+      const [prompt, setPrompt] = useState(STYLE_PRESETS[0].prompt)
+      const [filter, setFilter] = useState(STYLE_PRESETS[0].filter)
+      const [busy, setBusy] = useState(false)
+      const [compare, setCompare] = useState(null) // { sessionId, variantId }
+      const fileRef = useRef(null)
+      const imgRef = useRef(null)
+      const maskRef = useRef(null)
+      const drawing = useRef(false)
+      const [tool, setTool] = useState('brush')
+      const [brushSize, setBrushSize] = useState(40)
+
+      function onUpload(e) {
+        const f = e.target.files?.[0]
+        if (!f) return
+        const reader = new FileReader()
+        reader.onload = () => setPhotoSource(reader.result)
+        reader.readAsDataURL(f)
+      }
+
+      function syncCanvas() {
+        const img = imgRef.current, c = maskRef.current
+        if (!img || !c) return
+        if (c.width !== img.clientWidth || c.height !== img.clientHeight) {
+          c.width = img.clientWidth; c.height = img.clientHeight
+        }
+      }
+
+      function paint(e) {
+        const c = maskRef.current
+        const r = c.getBoundingClientRect()
+        const p = { x: e.clientX - r.left, y: e.clientY - r.top }
+        const g = c.getContext('2d')
+        g.globalCompositeOperation = tool === 'brush' ? 'source-over' : 'destination-out'
+        g.fillStyle = 'rgba(90, 138, 74, 0.55)'
+        g.beginPath(); g.arc(p.x, p.y, brushSize / 2, 0, Math.PI * 2); g.fill()
+      }
+
+      async function generate() {
+        if (!photoSource) return
+        setBusy(true)
+        await new Promise(r => setTimeout(r, 900)) // fake latency
+        // bake the selected filter + 3 small variations
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.src = photoSource
+        await new Promise(r => { img.onload = r })
+        const filters = [
+          filter,
+          filter + ' brightness(0.97)',
+          filter + ' contrast(1.08)',
+          filter + ' brightness(1.04) saturate(0.95)',
+        ]
+        const variants = filters.map((f, i) => ({
+          id: nid(),
+          url: applyFilterToImage(img, f),
+          seed: i + 1,
+          pinned: false,
+        }))
+        const session = { id: nid(), prompt, filter, variants, sourceUrl: photoSource }
+        setPhotoSessions(s => [session, ...s])
+        setBusy(false)
+      }
+
+      function togglePin(sessionId, variantId) {
+        setPhotoSessions(sessions => sessions.map(s => s.id !== sessionId ? s : {
+          ...s, variants: s.variants.map(v => v.id !== variantId ? v : { ...v, pinned: !v.pinned })
+        }))
+      }
+
+      const session = compare ? photoSessions.find(s => s.id === compare.sessionId) : null
+      const variant = session?.variants.find(v => v.id === compare.variantId)
+
+      return html`
+        <div class="grid grid-cols-[1fr_320px] h-full">
+          <div class="bg-slate-900/30 relative overflow-auto p-6">
+            ${!photoSource ? html`
+              <button onClick=${() => fileRef.current.click()}
+                class="w-full h-full min-h-[400px] rounded-lg border-2 border-dashed border-slate-700 hover:border-green-600 flex flex-col items-center justify-center gap-3 text-slate-400 hover:text-slate-200">
+                <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                </svg>
+                <div>Click to upload a photo of the client's yard</div>
+                <div class="text-xs">For the demo, any landscape photo works. Try a yard, a backyard, a building exterior.</div>
+              </button>
+            ` : html`
+              <div class="space-y-6">
+                <div class="relative inline-block max-w-full">
+                  <img ref=${imgRef} src=${photoSource} onLoad=${syncCanvas}
+                       class="max-w-full rounded-lg border border-slate-800" />
+                  <canvas ref=${maskRef} class="absolute inset-0 cursor-crosshair rounded-lg"
+                    onPointerDown=${e => { drawing.current = true; e.target.setPointerCapture(e.pointerId); paint(e) }}
+                    onPointerMove=${e => { if (drawing.current) paint(e) }}
+                    onPointerUp=${e => { drawing.current = false; e.target.releasePointerCapture(e.pointerId) }} />
+                </div>
+                ${photoSessions.map(s => html`
+                  <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+                    <div class="text-xs text-slate-400 mb-2 truncate">${s.prompt}</div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      ${s.variants.map(v => html`
+                        <div class="relative group">
+                          <button onClick=${() => setCompare({ sessionId: s.id, variantId: v.id })}
+                            class="block w-full text-left">
+                            <img src=${v.url} class="w-full aspect-square object-cover rounded border border-slate-800 group-hover:border-green-500 transition" />
+                            <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded">
+                              <span class="text-xs px-2 py-1 rounded bg-green-700 text-white">Compare</span>
+                            </div>
+                          </button>
+                          <button onClick=${(e) => { e.stopPropagation(); togglePin(s.id, v.id) }}
+                            class="absolute top-1 right-1 p-1 rounded text-xs ${v.pinned ? 'bg-green-700 text-white' : 'bg-black/60 text-slate-300 opacity-0 group-hover:opacity-100'}">
+                            ${v.pinned ? '★' : '☆'}
+                          </button>
+                        </div>
+                      `)}
+                    </div>
+                  </div>
+                `)}
+              </div>
+            `}
+            <input ref=${fileRef} type="file" accept="image/*" onChange=${onUpload} class="hidden" />
+          </div>
+
+          <aside class="border-l border-slate-800 bg-slate-900/60 p-4 overflow-y-auto">
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Source</h3>
+            <button onClick=${() => fileRef.current.click()}
+              class="w-full text-sm px-3 py-2 mb-4 bg-slate-800 hover:bg-slate-700 rounded">
+              ${photoSource ? 'Replace photo' : 'Upload photo'}
+            </button>
+
+            ${photoSource && html`
+              <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Mask</h3>
+              <div class="flex gap-1 mb-2">
+                <button onClick=${() => setTool('brush')}
+                  class="flex-1 px-2 py-1.5 rounded text-sm ${tool === 'brush' ? 'bg-green-700' : 'bg-slate-800'}">Brush</button>
+                <button onClick=${() => setTool('erase')}
+                  class="flex-1 px-2 py-1.5 rounded text-sm ${tool === 'erase' ? 'bg-green-700' : 'bg-slate-800'}">Erase</button>
+              </div>
+              <label class="text-xs text-slate-400">Brush: ${brushSize}px</label>
+              <input type="range" min="4" max="120" value=${brushSize} onInput=${e => setBrushSize(+e.target.value)} class="w-full mb-4" />
+            `}
+
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Style presets</h3>
+            <div class="grid grid-cols-2 gap-1 mb-3">
+              ${STYLE_PRESETS.map(p => html`
+                <button onClick=${() => { setPrompt(p.prompt); setFilter(p.filter) }}
+                  class="text-xs px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-left truncate">
+                  ${p.label}
+                </button>
+              `)}
+            </div>
+
+            <h3 class="text-xs uppercase tracking-wider text-slate-500 mb-2">Prompt</h3>
+            <textarea rows="4" value=${prompt} onInput=${e => setPrompt(e.target.value)}
+              class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-sm mb-3" />
+
+            <button onClick=${generate} disabled=${!photoSource || busy}
+              class="w-full px-3 py-2 bg-green-700 hover:bg-green-600 disabled:bg-slate-800 disabled:text-slate-500 rounded text-sm font-medium">
+              ${busy ? 'Generating…' : 'Generate 4 variants'}
+            </button>
+            <p class="text-xs text-amber-400 mt-3">
+              Web demo: AI variants are simulated with image filters. The desktop app calls Replicate ControlNet for real photoreal redesigns.
+            </p>
+          </aside>
+
+          ${session && variant && html`<${BeforeAfter}
+            before=${session.sourceUrl} after=${variant.url} prompt=${session.prompt}
+            pinned=${variant.pinned}
+            onTogglePin=${() => togglePin(session.id, variant.id)}
+            onClose=${() => setCompare(null)} />`}
+        </div>
+      `
+    }
+
+    function applyFilterToImage(img, filter) {
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth; c.height = img.naturalHeight
+      const g = c.getContext('2d')
+      g.filter = filter
+      g.drawImage(img, 0, 0)
+      return c.toDataURL('image/jpeg', 0.85)
+    }
+
+    function BeforeAfter({ before, after, prompt, pinned, onTogglePin, onClose }) {
+      const [pos, setPos] = useState(50)
+      const [swap, setSwap] = useState(false)
+      const wrap = useRef(null)
+      const dragging = useRef(false)
+      useEffect(() => {
+        function k(e) {
+          if (e.key === 'Escape') onClose()
+          if (e.key === 'ArrowLeft')  setPos(p => Math.max(0, p - 2))
+          if (e.key === 'ArrowRight') setPos(p => Math.min(100, p + 2))
+        }
+        window.addEventListener('keydown', k)
+        return () => window.removeEventListener('keydown', k)
+      }, [onClose])
+      function fromX(x) {
+        const r = wrap.current.getBoundingClientRect()
+        setPos(Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100)))
+      }
+      const left = swap ? after : before
+      const right = swap ? before : after
+      return html`
+        <div class="fixed inset-0 z-50 bg-black/85 flex flex-col">
+          <div class="flex items-center gap-3 px-4 h-12 border-b border-slate-800">
+            <span class="text-sm font-medium">Before / after</span>
+            <span class="text-xs text-slate-400 truncate flex-1">${prompt}</span>
+            <button onClick=${() => setSwap(s => !s)} class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded">Swap sides</button>
+            <button onClick=${onTogglePin} class="text-xs px-2 py-1 rounded ${pinned ? 'bg-green-700' : 'bg-slate-800 hover:bg-slate-700'}">${pinned ? '★ Pinned' : '☆ Pin favorite'}</button>
+            <button onClick=${onClose} class="text-slate-400 hover:text-slate-100 text-xl leading-none">×</button>
+          </div>
+          <div class="flex-1 flex items-center justify-center p-6 overflow-hidden">
+            <div ref=${wrap} class="relative max-w-full max-h-full select-none cursor-ew-resize"
+              onPointerDown=${e => { dragging.current = true; e.target.setPointerCapture(e.pointerId); fromX(e.clientX) }}
+              onPointerMove=${e => { if (dragging.current) fromX(e.clientX) }}
+              onPointerUp=${e => { dragging.current = false; e.target.releasePointerCapture(e.pointerId) }}>
+              <img src=${left} class="block max-w-[90vw] max-h-[80vh] pointer-events-none" />
+              <img src=${right} class="absolute inset-0 w-full h-full pointer-events-none"
+                style="clip-path: inset(0 ${100 - pos}% 0 0)" />
+              <div class="absolute top-2 left-2 text-[10px] uppercase tracking-wider font-semibold bg-black/70 text-white px-2 py-0.5 rounded">${swap ? 'After' : 'Before'}</div>
+              <div class="absolute top-2 right-2 text-[10px] uppercase tracking-wider font-semibold bg-green-700 text-white px-2 py-0.5 rounded">${swap ? 'Before' : 'After'}</div>
+              <div class="absolute top-0 bottom-0 pointer-events-none" style="left: ${pos}%; transform: translateX(-50%)">
+                <div class="w-0.5 h-full bg-white shadow-lg"></div>
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-white shadow-lg flex items-center justify-center text-slate-900 font-bold">⇆</div>
+              </div>
+            </div>
+          </div>
+          <div class="px-6 pb-4 flex items-center gap-3 text-xs text-slate-400">
+            <input type="range" min="0" max="100" value=${pos} onInput=${e => setPos(+e.target.value)} class="flex-1" />
+            <span class="w-10 text-right font-mono">${Math.round(pos)}%</span>
+          </div>
+        </div>
+      `
+    }
+
+    /* ---------- mount ---------- */
+    render(html`<${App} />`, document.getElementById('app'))
+  </script>
+</body>
+</html>
