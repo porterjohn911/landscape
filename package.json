@@ -7,8 +7,11 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && electron-builder",
-    "build:renderer": "vite build",
+    "build": "vite build",
+    "dist": "vite build && electron-builder --publish=never",
+    "dist:mac": "vite build && electron-builder --mac --publish=never",
+    "dist:win": "vite build && electron-builder --win --publish=never",
+    "dist:linux": "vite build && electron-builder --linux --publish=never",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "start": "electron ."
@@ -45,9 +48,26 @@
   "build": {
     "appId": "com.landscapestudio.app",
     "productName": "Landscape Studio",
-    "files": ["dist/**/*", "dist-electron/**/*"],
-    "mac": { "category": "public.app-category.graphics-design" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" }
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "category": "Graphics"
+    }
   }
 }
