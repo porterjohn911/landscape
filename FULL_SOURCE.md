@@ -4,7 +4,7 @@ Every source file in the repository concatenated into one place. Useful for code
 
 Regenerated automatically on every push to `main` by [`scripts/build-bundle.sh`](./scripts/build-bundle.sh).
 
-Generated from commit `79bae77` on 2026-05-20.
+Generated from commit `7927315` on 2026-05-20.
 
 ## Files included
 
