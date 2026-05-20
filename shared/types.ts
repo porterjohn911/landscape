@@ -53,8 +53,14 @@ export type Site = {
   address?: string
   center: LatLng
   zoom: number
-  propertyPolygon: LatLng[]
+  // Property line stored in meters relative to site.center, same frame as
+  // every DesignObject. Empty until the designer traces it.
+  propertyPolygon: Point[]
   northRotation: number
+  // Multiplier applied to the satellite-derived pxPerMeter. Defaults to 1.0;
+  // designers refine it with the calibrate tool (click two points, enter
+  // their real-world length).
+  scaleCalibration?: number
 }
 
 export type AIPhotoVariant = {
