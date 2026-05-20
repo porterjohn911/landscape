@@ -1,0 +1,42 @@
+name: Update FULL_SOURCE.md
+
+on:
+  push:
+    branches: [main]
+    # Skip when the workflow's own commit is what triggered the push, and
+    # ignore docs that don't belong in the bundle.
+    paths-ignore:
+      - 'FULL_SOURCE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bundle
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    # Skip the workflow's own automated commits to avoid an infinite loop.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Regenerate bundle
+        run: bash scripts/build-bundle.sh
+
+      - name: Commit if changed
+        run: |
+          if [[ -n "$(git status --porcelain FULL_SOURCE.md)" ]]; then
+            git config user.name  'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add FULL_SOURCE.md
+            git commit -m "chore: regenerate FULL_SOURCE.md for ${GITHUB_SHA::7}"
+            git push
+          else
+            echo "FULL_SOURCE.md already up to date."
+          fi

@@ -2,7 +2,9 @@
 
 Every source file in the repository concatenated into one place. Useful for code review or LLM ingestion. To actually **run** the app you still need the repository's directory structure — see the repo home page.
 
-Generated from commit `a23cd01` on 2026-05-20.
+Regenerated automatically on every push to `main` by [`scripts/build-bundle.sh`](./scripts/build-bundle.sh).
+
+Generated from commit `6d2fddd` on 2026-05-20.
 
 ## Files included
 
@@ -40,8 +42,10 @@ Generated from commit `a23cd01` on 2026-05-20.
 - [`src/modules/scene-3d/PlantModel.tsx`](#src-modules-scene-3d-PlantModel-tsx) — 195 lines
 - [`src/modules/scene-3d/models.ts`](#src-modules-scene-3d-models-ts) — 34 lines
 - [`web-demo/index.html`](#web-demo-index-html) — 962 lines
+- [`scripts/build-bundle.sh`](#scripts-build-bundle-sh) — 105 lines
 - [`.github/workflows/build.yml`](#-github-workflows-build-yml) — 85 lines
 - [`.github/workflows/pages.yml`](#-github-workflows-pages-yml) — 31 lines
+- [`.github/workflows/bundle.yml`](#-github-workflows-bundle-yml) — 42 lines
 
 
 ---
@@ -4697,6 +4701,119 @@ export function getModelFor(species: string): PlantModel | undefined {
 
 ---
 
+<a id="scripts-build-bundle-sh"></a>
+## `scripts/build-bundle.sh`
+
+````bash
+#!/usr/bin/env bash
+# Regenerates FULL_SOURCE.md by concatenating every source file in the repo
+# into a single scrollable Markdown document. Invoked from the
+# "Update FULL_SOURCE.md" GitHub Actions workflow and runnable locally.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+files=(
+  README.md
+  DESIGN.md
+  package.json
+  tsconfig.json
+  tsconfig.node.json
+  vite.config.ts
+  tailwind.config.js
+  postcss.config.js
+  index.html
+  .gitignore
+  shared/types.ts
+  electron/main.ts
+  electron/preload.ts
+  electron/store.ts
+  electron/ipc/config.ts
+  electron/ipc/projects.ts
+  electron/ipc/ai.ts
+  electron/ipc/satellite.ts
+  src/main.tsx
+  src/App.tsx
+  src/styles.css
+  src/lib/api.ts
+  src/lib/store.ts
+  src/routes/ProjectList.tsx
+  src/routes/Editor.tsx
+  src/routes/Settings.tsx
+  src/modules/ai-photo/AIPhotoStudio.tsx
+  src/modules/ai-photo/BeforeAfter.tsx
+  src/modules/plan-2d/PlanCanvas.tsx
+  src/modules/plan-2d/palette.ts
+  src/modules/scene-3d/SceneViewer.tsx
+  src/modules/scene-3d/PlantModel.tsx
+  src/modules/scene-3d/models.ts
+  web-demo/index.html
+  scripts/build-bundle.sh
+  .github/workflows/build.yml
+  .github/workflows/pages.yml
+  .github/workflows/bundle.yml
+)
+
+anchor() {
+  echo "$1" | tr '/.' '--' | tr -d '_'
+}
+
+lang_for() {
+  case "${1##*.}" in
+    ts|tsx)   echo typescript ;;
+    js|jsx)   echo javascript ;;
+    json)     echo json ;;
+    yml|yaml) echo yaml ;;
+    html)     echo html ;;
+    css)      echo css ;;
+    md)       echo markdown ;;
+    sh)       echo bash ;;
+    *)        echo "" ;;
+  esac
+}
+
+OUT=FULL_SOURCE.md
+
+{
+  echo "# Landscape Studio — Full source bundle"
+  echo ""
+  echo "Every source file in the repository concatenated into one place. Useful for code review or LLM ingestion. To actually **run** the app you still need the repository's directory structure — see the repo home page."
+  echo ""
+  echo "Regenerated automatically on every push to \`main\` by [\`scripts/build-bundle.sh\`](./scripts/build-bundle.sh)."
+  echo ""
+  echo "Generated from commit \`$(git rev-parse --short HEAD)\` on $(date -u +%Y-%m-%d)."
+  echo ""
+  echo "## Files included"
+  echo ""
+
+  for f in "${files[@]}"; do
+    if [ -f "$f" ]; then
+      lines=$(wc -l < "$f" | tr -d ' ')
+      echo "- [\`$f\`](#$(anchor "$f")) — $lines lines"
+    fi
+  done
+
+  echo ""
+
+  for f in "${files[@]}"; do
+    [ -f "$f" ] || continue
+    echo ""
+    echo "---"
+    echo ""
+    echo "<a id=\"$(anchor "$f")\"></a>"
+    echo "## \`$f\`"
+    echo ""
+    echo '````'"$(lang_for "$f")"
+    cat "$f"
+    echo '````'
+  done
+} > "$OUT"
+
+echo "Wrote $OUT ($(wc -l < "$OUT" | tr -d ' ') lines)"
+````
+
+---
+
 <a id="-github-workflows-build-yml"></a>
 ## `.github/workflows/build.yml`
 
@@ -4825,4 +4942,54 @@ jobs:
           path: web-demo
       - id: deployment
         uses: actions/deploy-pages@v4
+````
+
+---
+
+<a id="-github-workflows-bundle-yml"></a>
+## `.github/workflows/bundle.yml`
+
+````yaml
+name: Update FULL_SOURCE.md
+
+on:
+  push:
+    branches: [main]
+    # Skip when the workflow's own commit is what triggered the push, and
+    # ignore docs that don't belong in the bundle.
+    paths-ignore:
+      - 'FULL_SOURCE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bundle
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    # Skip the workflow's own automated commits to avoid an infinite loop.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Regenerate bundle
+        run: bash scripts/build-bundle.sh
+
+      - name: Commit if changed
+        run: |
+          if [[ -n "$(git status --porcelain FULL_SOURCE.md)" ]]; then
+            git config user.name  'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add FULL_SOURCE.md
+            git commit -m "chore: regenerate FULL_SOURCE.md for ${GITHUB_SHA::7}"
+            git push
+          else
+            echo "FULL_SOURCE.md already up to date."
+          fi
 ````
