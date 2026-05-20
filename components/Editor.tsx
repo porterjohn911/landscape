@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, ImageIcon, Map, Box } from 'lucide-react'
+import { ArrowLeft, ImageIcon, Map, Box, AlertTriangle, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { getConfig } from '@/lib/apiClient'
 import PlanCanvas from './PlanCanvas'
 import AIPhotoStudio from './AIPhotoStudio'
 
@@ -21,7 +22,12 @@ export default function Editor({ projectId }: { projectId: string }) {
   const rename = useStore((s) => s.rename)
   const [tab, setTab] = useState<Tab>('plan')
   const [mounted, setMounted] = useState(false)
+  const [noKey, setNoKey] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    getConfig().then((c) => setNoKey(!c.hasGoogle)).catch(() => {})
+  }, [])
 
   if (!mounted) return null
   if (!project) {
@@ -44,6 +50,18 @@ export default function Editor({ projectId }: { projectId: string }) {
           <TabBtn icon={<Box className="w-4 h-4" />} label="3D scene" active={tab === 'scene'} onClick={() => setTab('scene')} />
         </div>
       </div>
+
+      {noKey && !dismissed && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-900/40 border-b border-amber-700/50 text-amber-200 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">
+            The server can&apos;t see a Google Maps key, so address search, aerial imagery, and Street View are off.
+            Add <code className="px-1 bg-black/30 rounded">GOOGLE_MAPS_API_KEY</code> in Vercel → Settings → Environment Variables, then redeploy.
+            Check <code className="px-1 bg-black/30 rounded">/api/config</code> to confirm.
+          </span>
+          <button onClick={() => setDismissed(true)} className="text-amber-300 hover:text-amber-100"><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         {tab === 'photo' && <AIPhotoStudio projectId={projectId} />}

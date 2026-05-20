@@ -4,7 +4,7 @@ Every source file in the repository concatenated into one place. Useful for code
 
 Regenerated automatically on every push to `main` by [`scripts/build-bundle.sh`](./scripts/build-bundle.sh).
 
-Generated from commit `7927315` on 2026-05-20.
+Generated from commit `01e55db` on 2026-05-20.
 
 ## Files included
 
@@ -32,7 +32,7 @@ Generated from commit `7927315` on 2026-05-20.
 - [`app/api/streetview/route.ts`](#app-api-streetview-route-ts) — 42 lines
 - [`app/api/parcel/route.ts`](#app-api-parcel-route-ts) — 38 lines
 - [`app/api/ai/route.ts`](#app-api-ai-route-ts) — 71 lines
-- [`components/Editor.tsx`](#components-Editor-tsx) — 64 lines
+- [`components/Editor.tsx`](#components-Editor-tsx) — 82 lines
 - [`components/PlanCanvas.tsx`](#components-PlanCanvas-tsx) — 364 lines
 - [`components/AIPhotoStudio.tsx`](#components-AIPhotoStudio-tsx) — 202 lines
 - [`components/BeforeAfter.tsx`](#components-BeforeAfter-tsx) — 69 lines
@@ -1465,7 +1465,7 @@ export async function GET(req: NextRequest) {
 ````typescript
 import { NextRequest, NextResponse } from 'next/server'
 
-export const maxDuration = 120 // allow time for Replicate to finish
+export const maxDuration = 60 // Vercel Hobby plan caps at 60s; higher fails deploy
 
 const MODEL_VERSIONS: Record<string, `${string}/${string}:${string}`> = {
   canny: 'jagilley/controlnet-canny:aff48af9c68d162388d230a2ab003f68d2638d88307bdaf1c2f1ac95079c9613',
@@ -1547,8 +1547,9 @@ export async function POST(req: NextRequest) {
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowLeft, ImageIcon, Map, Box } from 'lucide-react'
+import { ArrowLeft, ImageIcon, Map, Box, AlertTriangle, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { getConfig } from '@/lib/apiClient'
 import PlanCanvas from './PlanCanvas'
 import AIPhotoStudio from './AIPhotoStudio'
 
@@ -1565,7 +1566,12 @@ export default function Editor({ projectId }: { projectId: string }) {
   const rename = useStore((s) => s.rename)
   const [tab, setTab] = useState<Tab>('plan')
   const [mounted, setMounted] = useState(false)
+  const [noKey, setNoKey] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    getConfig().then((c) => setNoKey(!c.hasGoogle)).catch(() => {})
+  }, [])
 
   if (!mounted) return null
   if (!project) {
@@ -1588,6 +1594,18 @@ export default function Editor({ projectId }: { projectId: string }) {
           <TabBtn icon={<Box className="w-4 h-4" />} label="3D scene" active={tab === 'scene'} onClick={() => setTab('scene')} />
         </div>
       </div>
+
+      {noKey && !dismissed && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-900/40 border-b border-amber-700/50 text-amber-200 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">
+            The server can&apos;t see a Google Maps key, so address search, aerial imagery, and Street View are off.
+            Add <code className="px-1 bg-black/30 rounded">GOOGLE_MAPS_API_KEY</code> in Vercel → Settings → Environment Variables, then redeploy.
+            Check <code className="px-1 bg-black/30 rounded">/api/config</code> to confirm.
+          </span>
+          <button onClick={() => setDismissed(true)} className="text-amber-300 hover:text-amber-100"><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         {tab === 'photo' && <AIPhotoStudio projectId={projectId} />}

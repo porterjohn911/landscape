@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-export const maxDuration = 120 // allow time for Replicate to finish
+export const maxDuration = 60 // Vercel Hobby plan caps at 60s; higher fails deploy
 
 const MODEL_VERSIONS: Record<string, `${string}/${string}:${string}`> = {
   canny: 'jagilley/controlnet-canny:aff48af9c68d162388d230a2ab003f68d2638d88307bdaf1c2f1ac95079c9613',
