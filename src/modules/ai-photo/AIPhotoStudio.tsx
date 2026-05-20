@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { Sparkles, Upload, Brush, Eraser, Loader2, Pin, PinOff } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Sparkles, Upload, Brush, Eraser, Loader2, Pin, PinOff, SplitSquareHorizontal } from 'lucide-react'
 import { useProject } from '../../lib/store'
 import { api, unwrap } from '../../lib/api'
 import type { ControlNetKind, AIPhotoSession } from '@shared/types'
+import BeforeAfter from './BeforeAfter'
 
 const STYLE_PRESETS: Array<{ label: string; prompt: string }> = [
   { label: 'Modern xeriscape', prompt: 'modern xeriscape backyard with drought-tolerant plants, decomposed granite, board-formed concrete planters, golden hour' },
@@ -16,6 +17,7 @@ const STYLE_PRESETS: Array<{ label: string; prompt: string }> = [
 export default function AIPhotoStudio() {
   const { project, addPhotoSession } = useProject()
   const [sourceImage, setSourceImage] = useState<string | null>(null)
+  const [compare, setCompare] = useState<{ sessionId: string; variantId: string } | null>(null)
   const [prompt, setPrompt] = useState(STYLE_PRESETS[0].prompt)
   const [negative, setNegative] = useState('cluttered, low quality, deformed, blurry, watermark')
   const [controlnet, setControlnet] = useState<ControlNetKind>('canny')
@@ -130,11 +132,10 @@ export default function AIPhotoStudio() {
           variantCount: 4,
         }),
       )
-      // Save the source image into project assets for posterity (mock + real).
       const session: AIPhotoSession = {
         id: res.sessionId,
         createdAt: new Date().toISOString(),
-        sourceImagePath: '', // renderer doesn't know main-process path; mock returns its own
+        sourceImagePath: res.sourceImagePath,
         prompt,
         negativePrompt: negative,
         controlnet,
@@ -194,7 +195,11 @@ export default function AIPhotoStudio() {
             {project && project.photoSessions.length > 0 && (
               <div className="space-y-4">
                 {project.photoSessions.map((s) => (
-                  <SessionGallery key={s.id} session={s} />
+                  <SessionGallery
+                    key={s.id}
+                    session={s}
+                    onCompare={(variantId) => setCompare({ sessionId: s.id, variantId })}
+                  />
                 ))}
               </div>
             )}
@@ -291,11 +296,48 @@ export default function AIPhotoStudio() {
           </p>
         )}
       </aside>
+
+      {compare && project && <CompareLauncher compare={compare} onClose={() => setCompare(null)} />}
     </div>
   )
 }
 
-function SessionGallery({ session }: { session: AIPhotoSession }) {
+function CompareLauncher({
+  compare, onClose,
+}: {
+  compare: { sessionId: string; variantId: string }
+  onClose: () => void
+}) {
+  const { project, updatePhotoSession } = useProject()
+  const session = useMemo(
+    () => project?.photoSessions.find((s) => s.id === compare.sessionId),
+    [project, compare.sessionId],
+  )
+  const variant = session?.variants.find((v) => v.id === compare.variantId)
+  if (!session || !variant) return null
+  return (
+    <BeforeAfter
+      beforeUrl={`file://${session.sourceImagePath}`}
+      afterUrl={`file://${variant.localPath}`}
+      prompt={session.prompt}
+      pinned={!!variant.pinned}
+      onTogglePin={() => {
+        const variants = session.variants.map((v) =>
+          v.id === variant.id ? { ...v, pinned: !v.pinned } : v,
+        )
+        updatePhotoSession(session.id, { variants })
+      }}
+      onClose={onClose}
+    />
+  )
+}
+
+function SessionGallery({
+  session, onCompare,
+}: {
+  session: AIPhotoSession
+  onCompare: (variantId: string) => void
+}) {
   const { project, updatePhotoSession } = useProject()
   if (!project) return null
 
@@ -316,13 +358,24 @@ function SessionGallery({ session }: { session: AIPhotoSession }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {session.variants.map((v) => (
           <div key={v.id} className="relative group">
-            <img
-              src={`file://${v.localPath}`}
-              alt="variant"
-              className="w-full aspect-square object-cover rounded border border-slate-800"
-            />
             <button
-              onClick={() => togglePin(v.id)}
+              onClick={() => onCompare(v.id)}
+              className="block w-full text-left"
+              title="Open before / after comparison"
+            >
+              <img
+                src={`file://${v.localPath}`}
+                alt="variant"
+                className="w-full aspect-square object-cover rounded border border-slate-800 group-hover:border-moss-500 transition"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center rounded">
+                <span className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-moss-600 text-white">
+                  <SplitSquareHorizontal className="w-3.5 h-3.5" /> Compare
+                </span>
+              </div>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); togglePin(v.id) }}
               className={`absolute top-1 right-1 p-1 rounded ${v.pinned ? 'bg-moss-600 text-white' : 'bg-black/60 text-slate-300 opacity-0 group-hover:opacity-100'}`}
               title={v.pinned ? 'Unpin' : 'Pin favorite'}
             >

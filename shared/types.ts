@@ -137,6 +137,7 @@ export type GenerateRequest = {
 
 export type GenerateResponse = {
   sessionId: string
+  sourceImagePath: string
   variants: AIPhotoVariant[]
 }
 

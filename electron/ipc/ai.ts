@@ -34,10 +34,24 @@ async function downloadToFile(url: string, outPath: string) {
   await fs.writeFile(outPath, buf)
 }
 
+async function saveSource(
+  projectId: string,
+  sessionId: string,
+  dataUrl: string,
+): Promise<string> {
+  const dir = assetsDir(projectId)
+  await fs.mkdir(dir, { recursive: true })
+  const { buffer } = dataUrlToBuffer(dataUrl)
+  const localPath = path.join(dir, `${sessionId}_source.png`)
+  await fs.writeFile(localPath, buffer)
+  return localPath
+}
+
 async function mockGenerate(req: GenerateRequest): Promise<GenerateResponse> {
   const dir = assetsDir(req.projectId)
   await fs.mkdir(dir, { recursive: true })
   const sessionId = 's_' + Date.now().toString(36)
+  const sourceImagePath = await saveSource(req.projectId, sessionId, req.sourceImageDataUrl)
   const { buffer } = dataUrlToBuffer(req.sourceImageDataUrl)
   const variants: AIPhotoVariant[] = []
   const count = req.variantCount ?? 4
@@ -51,7 +65,7 @@ async function mockGenerate(req: GenerateRequest): Promise<GenerateResponse> {
       createdAt: new Date().toISOString(),
     })
   }
-  return { sessionId, variants }
+  return { sessionId, sourceImagePath, variants }
 }
 
 async function realGenerate(token: string, req: GenerateRequest): Promise<GenerateResponse> {
@@ -87,6 +101,7 @@ async function realGenerate(token: string, req: GenerateRequest): Promise<Genera
   const dir = assetsDir(req.projectId)
   await fs.mkdir(dir, { recursive: true })
   const sessionId = 's_' + Date.now().toString(36)
+  const sourceImagePath = await saveSource(req.projectId, sessionId, req.sourceImageDataUrl)
   const variants: AIPhotoVariant[] = []
   for (let i = 0; i < urls.length; i++) {
     const local = path.join(dir, `${sessionId}_${i}.png`)
@@ -98,7 +113,7 @@ async function realGenerate(token: string, req: GenerateRequest): Promise<Genera
       createdAt: new Date().toISOString(),
     })
   }
-  return { sessionId, variants }
+  return { sessionId, sourceImagePath, variants }
 }
 
 export function registerAIHandlers(ipc: IpcMain) {
