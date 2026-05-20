@@ -1,73 +1,35 @@
 {
   "name": "landscape-studio",
-  "version": "0.1.0",
-  "description": "Desktop landscape design app — 2D site plan, 3D scene, and AI photo redesign.",
+  "version": "0.2.0",
   "private": true,
-  "type": "module",
-  "main": "dist-electron/main.js",
+  "description": "Web app for landscape design — real aerial, 2D site plan, 3D scene, and AI photo redesign.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "dist": "vite build && electron-builder --publish=never",
-    "dist:mac": "vite build && electron-builder --mac --publish=never",
-    "dist:win": "vite build && electron-builder --win --publish=never",
-    "dist:linux": "vite build && electron-builder --linux --publish=never",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "start": "electron ."
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-three/drei": "^9.114.0",
     "@react-three/fiber": "^8.17.10",
-    "konva": "^9.3.16",
     "lucide-react": "^0.460.0",
     "nanoid": "^5.0.7",
+    "next": "^14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-konva": "^18.2.10",
-    "react-router-dom": "^6.27.0",
     "replicate": "^1.0.1",
     "three": "^0.169.0",
     "zustand": "^5.0.1"
   },
   "devDependencies": {
+    "@types/node": "^22.8.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",
-    "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
-    "electron": "^33.0.2",
-    "electron-builder": "^25.1.8",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.10",
-    "vite-plugin-electron": "^0.28.8",
-    "vite-plugin-electron-renderer": "^0.14.6"
-  },
-  "build": {
-    "appId": "com.landscapestudio.app",
-    "productName": "Landscape Studio",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "dist-electron/**/*", "package.json"],
-    "mac": {
-      "category": "public.app-category.graphics-design",
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
-      "identity": null,
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false
-    },
-    "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false
-    },
-    "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }],
-      "category": "Graphics"
-    }
+    "typescript": "^5.6.3"
   }
 }

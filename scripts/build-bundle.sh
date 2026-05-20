@@ -9,40 +9,36 @@ cd "$(dirname "$0")/.."
 files=(
   README.md
   DESIGN.md
+  WEB_APP_PLAN.md
   package.json
+  next.config.mjs
   tsconfig.json
-  tsconfig.node.json
-  vite.config.ts
-  tailwind.config.js
-  postcss.config.js
-  index.html
+  tailwind.config.ts
+  postcss.config.mjs
+  .env.example
   .gitignore
-  shared/types.ts
-  electron/main.ts
-  electron/preload.ts
-  electron/store.ts
-  electron/ipc/config.ts
-  electron/ipc/projects.ts
-  electron/ipc/ai.ts
-  electron/ipc/satellite.ts
-  src/main.tsx
-  src/App.tsx
-  src/styles.css
-  src/lib/api.ts
-  src/lib/store.ts
-  src/routes/ProjectList.tsx
-  src/routes/Editor.tsx
-  src/routes/Settings.tsx
-  src/modules/ai-photo/AIPhotoStudio.tsx
-  src/modules/ai-photo/BeforeAfter.tsx
-  src/modules/plan-2d/PlanCanvas.tsx
-  src/modules/plan-2d/palette.ts
-  src/modules/scene-3d/SceneViewer.tsx
-  src/modules/scene-3d/PlantModel.tsx
-  src/modules/scene-3d/models.ts
+  lib/types.ts
+  lib/palette.ts
+  lib/store.ts
+  lib/apiClient.ts
+  app/layout.tsx
+  app/globals.css
+  app/page.tsx
+  app/project/[id]/page.tsx
+  app/api/config/route.ts
+  app/api/geocode/route.ts
+  app/api/aerial/route.ts
+  app/api/streetview/route.ts
+  app/api/parcel/route.ts
+  app/api/ai/route.ts
+  components/Editor.tsx
+  components/PlanCanvas.tsx
+  components/AIPhotoStudio.tsx
+  components/BeforeAfter.tsx
+  components/SceneViewer.tsx
+  components/PlantModel.tsx
   web-demo/index.html
   scripts/build-bundle.sh
-  .github/workflows/build.yml
   .github/workflows/pages.yml
   .github/workflows/bundle.yml
 )
